@@ -5,6 +5,7 @@ import https from 'https';
 import http2 from 'http2';
 import dns from 'dns';
 import net from 'net';
+import tls from 'tls';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
@@ -108,7 +109,52 @@ async function resolveBackend(hostname: string): Promise<string> {
   const r = new Resolver();
   r.setServers(['8.8.8.8', '1.1.1.1']);
   const [ip] = await r.resolve4(hostname);
-  return ip;
+  if (ip && !isLoopbackAddress(ip)) return ip;
+  throw new Error(`DNS resolved to loopback address ${ip}`);
+}
+
+const forwardAgents = new Map<string, https.Agent>();
+function getForwardAgent(targetHostname: string): https.Agent | undefined {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
+  if (!proxyUrl) return undefined;
+  if (forwardAgents.has(targetHostname)) return forwardAgents.get(targetHostname);
+  try {
+    const parsed = new URL(proxyUrl);
+    const agent = new https.Agent({ keepAlive: true });
+    agent.createConnection = function(options: any, callback: (err: Error | null, socket?: any) => void) {
+      const servername = options.servername || targetHostname;
+      const port = options.port || 443;
+      const isGoogleHost = targetHostname.includes('googleapis.com') || (options.servername && options.servername.includes('googleapis.com'));
+      const connectTarget = isGoogleHost
+        ? (backendIp || process.env.GOOGLE_BACKEND_IP || '172.217.119.4')
+        : servername;
+      const connectReq = http.request({
+        host: parsed.hostname,
+        port: parseInt(parsed.port, 10),
+        method: 'CONNECT',
+        path: `${connectTarget}:${port}`,
+      });
+      connectReq.on('connect', (res, socket) => {
+        if (res.statusCode !== 200) {
+          callback(new Error(`Upstream proxy CONNECT failed: ${res.statusCode}`));
+          return;
+        }
+        const tlsSocket = tls.connect({
+          socket,
+          servername,
+        }, () => {
+          callback(null, tlsSocket);
+        });
+        tlsSocket.on('error', callback);
+      });
+      connectReq.on('error', callback);
+      connectReq.end();
+    };
+    forwardAgents.set(targetHostname, agent);
+    return agent;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -170,10 +216,13 @@ function port4000Handler(req: http.IncomingMessage, res: http.ServerResponse): v
     dashboardHandler(req, res);
     return;
   }
-  const hostname = 'cloudcode-pa.googleapis.com';
-  logger.debug('REST forward', { method: req.method, path: pathname });
+  const host = req.headers.host || '';
+  const hostname = host.toLowerCase().includes('daily-cloudcode')
+    ? 'daily-cloudcode-pa.googleapis.com' : 'cloudcode-pa.googleapis.com';
+  logger.debug('REST forward', { method: req.method, path: pathname, hostname });
+  const forwardAgent = getForwardAgent(hostname);
   const proxyReq = https.request(
-    { hostname: backendIp, port: 443, path: req.url, method: req.method, servername: hostname, rejectUnauthorized: true, headers: { ...sanitizeForwardHeaders(req.headers), host: hostname } },
+    { hostname: forwardAgent ? hostname : backendIp, port: 443, path: req.url, method: req.method, servername: hostname, agent: forwardAgent, rejectUnauthorized: true, headers: { ...sanitizeForwardHeaders(req.headers), host: hostname } },
     (proxyRes) => {
       // HTTP/2 forbids HTTP/1 connection headers in responses (transfer-encoding,
       // connection, …); writeHead throws on them and would crash the process.
@@ -257,7 +306,7 @@ function stripSystemContext(text: string): string {
   // We only keep the workspace path so the model knows where it is.
 
   if (workspacePath) {
-    return `## Current Workspace\nYour current working directory is: \`${workspacePath}\`\nAll file operations (list_dir, view_file, write_to_file, run_command, etc.) should use this directory.`;
+    return `## Current Workspace\nYour current working directory is: \`${workspacePath}\`\nAll file operations (view_file, write_to_file, run_command, etc.) should use this directory.`;
   }
 
   return '';
@@ -730,13 +779,15 @@ async function forwardToGoogle(
   delete h1Headers['host'];
   h1Headers['host'] = hostname;
 
+  const forwardAgent = getForwardAgent(hostname);
   const proxyReq = https.request(
     {
-      hostname: backendIp,
+      hostname: forwardAgent ? hostname : backendIp,
       port: 443,
       path: url,
       method,
       servername: hostname,
+      agent: forwardAgent,
       rejectUnauthorized: true,
       headers: h1Headers,
       // Disable response buffering for streaming
@@ -863,8 +914,12 @@ async function main(): Promise<void> {
     backendIp = await resolveBackend('cloudcode-pa.googleapis.com');
     logger.info('Google backend resolved', { ip: backendIp });
   } catch (e: any) {
-    logger.error('DNS resolution failed', { error: e.message });
-    logger.error('Interception is disabled until the backend resolves. Set GOOGLE_BACKEND_IP=<ip> in .env to skip DNS.');
+    if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY) {
+      logger.info('Using upstream proxy for Google forward requests');
+    } else {
+      logger.error('DNS resolution failed', { error: e.message });
+      logger.error('Interception is disabled until the backend resolves. Set GOOGLE_BACKEND_IP=<ip> or HTTPS_PROXY in .env to skip DNS.');
+    }
     // Keep serving the dashboard instead of exiting: on networks where public
     // DNS is blocked an exit here made `antigravity start` look like a crash.
   }

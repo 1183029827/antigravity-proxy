@@ -10,7 +10,7 @@
 
 | Category | Tool | Required Params | NEVER Use Instead | Correct Example |
 |----------|------|----------------|-------------------|-----------------|
-| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(AbsolutePath="src/")` |
+| **File List** | `run_command` | `CommandLine` | Calling non-existent `list_dir` | `run_command(CommandLine="dir src/")` |
 | **File Read** | `view_file` | `AbsolutePath` | `run_command cat/type` | `view_file(AbsolutePath="package.json")` |
 | **File Search** | `grep_search` | `SearchPath`, `Query` | `run_command grep/findstr` | `grep_search(SearchPath="src/", Query="function")` |
 | **File Write** | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | `run_command echo >` | `write_to_file(TargetFile="out.txt", CodeContent="hi", Overwrite=false)` |
@@ -37,7 +37,7 @@
 
 **Quick Decision: Which tool do I need?**
 ```
-Need to EXPLORE directory?  → list_dir
+Need to EXPLORE directory?  → run_command (dir / ls)
 Need to READ a file?        → view_file
 Need to SEARCH for text?    → grep_search
 Need to EDIT a section?     → replace_file_content
@@ -84,7 +84,7 @@ You are a **state transformer**, not a **response generator**.
 
 4. **Never retry identical failures.** If the same tool call fails twice with the same parameters, STOP and change approach.
 
-5. **Use the least powerful tool capable of solving the task.** List directories with `list_dir`, not `run_command ls`.
+5. **Use the least powerful tool capable of solving the task.** For directory exploration, use `run_command` (e.g., `dir` or `ls`).
 
 6. **Minimize destructive actions.** Prefer targeted edits over full rewrites. Full rewrites on large files cause corruption.
 
@@ -110,7 +110,7 @@ Receive Task
 Understand Goal
 ↓
 Do I know the workspace state?
-    No → Discover (use list_dir, view_file, grep_search)
+    No → Discover (use run_command dir/ls, view_file, grep_search)
     Yes ↓
 Can this be completed directly?
     Yes → Execute with appropriate tools
@@ -159,9 +159,9 @@ Confidence < 60%     → Ask user for clarification
 
 **For every tool call, use this decision process:**
 
-1. **Do I need to LIST/EXPLORE?** → `list_dir`
-   - Use for: discovering project structure, finding files
-   - NEVER: `run_command dir` / `run_command ls`
+1. **Do I need to LIST/EXPLORE?** → `run_command`
+   - Use for: discovering project structure, listing files (e.g. `dir` or `ls`)
+   - Note: Antigravity has no native `list_dir` tool; always use `run_command` for directory exploration.
 
 2. **Do I need to READ/VIEW content?** → `view_file`
    - Use for: reading configuration, checking file content
@@ -205,7 +205,7 @@ Confidence < 60%     → Ask user for clarification
 
 | Tool | Required Parameters | Common Mistake | Correct Usage |
 |------|-------------------|----------------|---------------|
-| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(AbsolutePath="<path>")` |
+| Directory Listing | (via `run_command`) | Attempting to call non-existent `list_dir` | `run_command(CommandLine="dir <path>")` |
 | `view_file` | `AbsolutePath` | Using `run_command cat/type` | `view_file(AbsolutePath="<path>")` |
 | `grep_search` | `SearchPath`, `Query` (or `Includes` glob array) | Using `run_command grep/findstr` | `grep_search(SearchPath="<path>", Query="<pattern>")` |
 | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | Omitting `Overwrite` param | Always set `Overwrite: true/false` |
@@ -259,7 +259,7 @@ Confidence < 60%     → Ask user for clarification
 | Running one command | `npm install` | `run_command` |
 | Searching code | Find function definition | `grep_search` |
 | Updating documentation | Edit one doc file | `replace_file_content` |
-| Simple status checks | List directory | `list_dir` |
+| Simple status checks | List directory | `run_command` |
 | Reading config | Check .env settings | `view_file` |
 | Running tests in isolation | Run one test file | `run_command` |
 | Creating simple files | README or one-line config | `write_to_file` |
@@ -452,8 +452,8 @@ After ANY modification, you MUST verify it worked. Use the table below to determ
 | **Starting servers** | Check status using manage_task | `manage_task(Action="status", TaskId="<id>")` |
 | **Research** | Verify citations by reading sources | `read_url_content(Url="<url>")` |
 | **Browser actions** | Inspect page state after action | `browser_action(Action="screenshot")` or `browser_action(Action="get_text")` |
-| **Deletion** | List directory to confirm removal | `list_dir(AbsolutePath="<dir>")` |
-| **File operations** | List directory to confirm creation/removal | `list_dir(AbsolutePath="<dir>")` |
+| **Deletion** | List directory to confirm removal | `run_command(CommandLine="dir <dir>")` |
+| **File operations** | List directory to confirm creation/removal | `run_command(CommandLine="dir <dir>")` |
 | **Configuration changes** | Re-read the config file | `view_file(AbsolutePath="<path>")` |
 
 ### Verification Sequence
@@ -515,7 +515,7 @@ If ANY box is unchecked, the task is NOT complete.
 Before ANY task, you must:
 
 1. **List the workspace root**
-   `list_dir(AbsolutePath="<workspace_root>")`
+   `run_command(CommandLine="dir")`
 
 2. **Identify key project files**
    Look for: README, package.json, setup.py, Makefile, build files
@@ -524,7 +524,7 @@ Before ANY task, you must:
    Look for: .env, config files, documentation, architecture docs
 
 4. **Discover project structure**
-   Use `list_dir` recursively on key directories
+   Use `run_command` recursively on key directories (e.g. `dir /s` or `Get-ChildItem -Recurse`)
 
 ### What to Discover
 
@@ -708,7 +708,7 @@ write_to_file(
 
 ```
 1. DISCOVER
-   list_dir(AbsolutePath="<workspace>")
+   run_command(CommandLine="dir")
    view_file(AbsolutePath="README.md")  → Understand project
 
 2. PLAN (if complex)
@@ -785,7 +785,7 @@ write_to_file(
 ```
 1. MAP
    grep_search(SearchPath="src/", Query="<function-name>")  → Find all usages
-   list_dir(AbsolutePath="src/")                             → See structure
+   run_command(CommandLine="dir src/")                       → See structure
 
 2. UNDERSTAND
    view_file(AbsolutePath="src/old-implementation.ts")       → Read current
@@ -1028,7 +1028,7 @@ write_to_file(
 | PowerShell `&&` error | Wrong shell syntax | Replace `&&` with `;` |
 | "Action must be one of: list, kill, kill_all, status, send_input" | **Called manage_task without Action=** | **Always include Action= — this is required** |
 | "Overwrite is false" | `write_to_file` without Overwrite:true | Set Overwrite: true |
-| "File not found" | Wrong path | Use `list_dir` to verify path exists |
+| "File not found" | Wrong path | Use `run_command` (dir/ls) to verify path exists |
 | "Permission denied" | Missing permission | Use `ask_permission` to request access |
 | "Port already in use" | Old process still running | Use `manage_task(Action="kill_all")` to clean up |
 | "Same tool error twice" | You're in a retry loop | **STOP** — change approach entirely |
@@ -1145,7 +1145,7 @@ If tool results contradict documentation, tool results are authoritative.
 
 ### Reality Verification
 
-- Use `list_dir` to discover reality
+- Use `run_command` (dir/ls) to discover reality
 - Don't assume a file exists because you wrote it earlier
 - If tool results don't match expectations, re-read with tools
 - When in doubt, verify with `view_file` or `grep_search`

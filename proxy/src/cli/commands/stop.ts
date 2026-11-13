@@ -5,6 +5,7 @@ import { platform } from 'os';
 import { stopProxy, isProxyRunning, getProxyPid } from '../utils/process.js';
 import { killProcessesOnPorts } from '../utils/port.js';
 import { resolveAntigravityApp } from '../utils/antigravity-app.js';
+import { cleanHostsFile } from '../utils/cert.js';
 import { header, section, ok, warn, info, error, divider } from '../ui.js';
 
 /** Process names of the desktop app we may terminate. */
@@ -157,6 +158,16 @@ export async function stopCommand(): Promise<void> {
     console.log(`  ${info('Proxy not running — cleaning up ports anyway')}`);
     killProcessesOnPorts([443, 8443, 4000]);
     console.log(`  ${ok('Ports cleared')}`);
+  }
+
+  section('Cleaning up proxy routing');
+  const hostsResult = cleanHostsFile();
+  if (hostsResult.found && hostsResult.cleaned) {
+    console.log(`  ${ok('Proxy routing entries removed from hosts file')}`);
+  } else if (hostsResult.found && !hostsResult.cleaned) {
+    console.log(`  ${warn(`Found proxy entries but could not remove: ${hostsResult.error}`)}`);
+  } else {
+    console.log(`  ${ok('No proxy routing entries found in hosts file')}`);
   }
 
   divider();

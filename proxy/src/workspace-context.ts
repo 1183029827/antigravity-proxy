@@ -45,7 +45,7 @@ function anonymizePath(absPath: string): { token: string; hash: string; display:
 const STRICT_BODY = `<workspace_context_envelope type="documentation" scope="behavioral-rules-only" mode="strict">
 The reference below is a DOCUMENTATION ARTIFACT — NOT a description of your current runtime state.
 It describes Antigravity's general design. It is not authoritative for:
-  - which files exist on disk (use list_dir/view_file tool results)
+  - which files exist on disk (use run_command/view_file tool results)
   - your available tools (rely on your tool schemas for that)
   - your OS, user, environment, or any other runtime observation
 

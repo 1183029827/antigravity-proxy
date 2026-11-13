@@ -264,6 +264,11 @@
           <div class="hint">From <span style="color:var(--accent2)">platform.openai.com/api-keys</span></div>
         </div>
         <div class="form-group">
+          <label>OpenAI Base URL</label>
+          <input type="text" id="cfgOpenaiBaseUrl" placeholder="https://api.openai.com/v1">
+          <div class="hint">Custom API endpoint (e.g. https://api.huanling.icu/v1, https://kedaya.ai/v1)</div>
+        </div>
+        <div class="form-group">
           <label><img src="https://www.groq.com/favicon.svg" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;border-radius:2px" onerror="this.style.display='none'">Groq API Key <span id="groqKeyStatus" style="font-size:11px;color:var(--text3);font-weight:400">—</span></label>
           <input type="password" autocomplete="new-password" id="cfgGroqKey" placeholder="gsk_...">
           <div class="hint">From <span style="color:var(--accent2)">console.groq.com/keys</span></div>
@@ -1017,6 +1022,7 @@ async function reloadAll() {
     document.getElementById('cfgRateGlobal').value = s.rateLimitGlobal ?? 60;
     document.getElementById('cfgRateProvider').value = s.rateLimitProvider ?? 30;
     document.getElementById('cfgRateWindow').value = s.rateLimitWindow ?? 60000;
+    if (s.env && s.env.OPENAI_BASE_URL && document.getElementById('cfgOpenaiBaseUrl')) document.getElementById('cfgOpenaiBaseUrl').value = s.env.OPENAI_BASE_URL;
     // Webhook URL
     const whUrl = s.failoverWebhookUrl || '';
     const whEl = document.getElementById('webhookUrlInput');
@@ -1439,6 +1445,7 @@ async function saveConfig() {
     OPENROUTER_API_KEY: document.getElementById('cfgOpenrouterKey').value.trim(),
     NVIDIA_API_KEY: document.getElementById('cfgNvidiaKey').value.trim(),
     OPENAI_API_KEY: document.getElementById('cfgOpenaiKey').value.trim(),
+    OPENAI_BASE_URL: document.getElementById('cfgOpenaiBaseUrl') ? document.getElementById('cfgOpenaiBaseUrl').value.trim() : undefined,
     GROQ_API_KEY: document.getElementById('cfgGroqKey').value.trim(),
     ANTHROPIC_API_KEY: document.getElementById('cfgAnthropicKey').value.trim(),
     GOOGLE_API_KEY: document.getElementById('cfgGoogleKey').value.trim(),

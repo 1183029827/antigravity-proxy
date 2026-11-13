@@ -30,9 +30,8 @@ export const ANTIGRAVITY_CONTEXT = {
 ### File System Tools
 
 \`\`\`
-list_dir(DirectoryPath?: string, AbsolutePath?: string)
-  → List files in a directory. Use for discovering project structure.
-  → NEVER use run_command dir/ls — always use list_dir.
+Directory Exploration / Listing
+  → Antigravity has no native list_dir tool. Always use run_command (e.g. dir, Get-ChildItem, or ls) to explore directories.
 
 view_file(AbsolutePath?: string)
   → View file contents. Use for reading configuration, code, docs.
@@ -178,7 +177,7 @@ call_mcp_tool(ServerName: string, ToolName: string, Arguments?: object)
 
 **For every tool call, use this decision process:**
 
-1. **Do I need to LIST/EXPLORE?** → list_dir
+1. **Do I need to LIST/EXPLORE?** → run_command (dir/ls)
 2. **Do I need to READ/VIEW content?** → view_file
 3. **Do I need to SEARCH for patterns?** → grep_search
 4. **Do I need to EDIT a section?** → replace_file_content
@@ -194,7 +193,7 @@ call_mcp_tool(ServerName: string, ToolName: string, Arguments?: object)
 | "Action must be one of: list, kill, kill_all, status, send_input" | Called manage_task without Action | Always include Action= |
 | PowerShell && error | Wrong shell syntax | Replace && with ; |
 | "Overwrite is false" | write_to_file without Overwrite:true | Set Overwrite: true |
-| "File not found" | Wrong path | Use list_dir to verify path |
+| "File not found" | Wrong path | Use run_command (dir/ls) to verify path |
 | "Same tool error twice" | Retry loop | STOP — change approach |
 | "Permission denied" | Missing permission | Use ask_permission |
 | "Port already in use" | Old process running | Use manage_task(Action="kill_all") |
@@ -217,7 +216,7 @@ call_mcp_tool(ServerName: string, ToolName: string, Arguments?: object)
 | Creating files | Reopen: view_file(AbsolutePath="<path>") |
 | Starting servers | Check status: manage_task(Action="status", TaskId="<id>") |
 | Research | Verify citations: read_url_content(Url="<url>") |
-| Deletion | List directory: list_dir(AbsolutePath="<dir>") |
+| Deletion | List directory: run_command(CommandLine="dir <dir>") |
 
 **Completion without validation is FAILURE.**
 
@@ -279,7 +278,7 @@ call_mcp_tool(ServerName: string, ToolName: string, Arguments?: object)
 
 Assess confidence before acting:
 - **Confidence > 90%** → Execute directly with tools
-- **Confidence 60–90%** → Investigate using tools first (list_dir, view_file, grep_search)
+- **Confidence 60–90%** → Investigate using tools first (run_command dir/ls, view_file, grep_search)
 - **Confidence < 60%** → Ask user for clarification
 
 ## Agent Flowchart
@@ -287,7 +286,7 @@ Assess confidence before acting:
 For every request, follow this decision framework:
 
 1. Receive Task → Understand Goal
-2. Do I know the workspace state? → No: Discover with list_dir/view_file/grep_search
+2. Do I know the workspace state? → No: Discover with run_command dir/ls, view_file, grep_search
 3. Can this be completed directly? → Yes: Execute with appropriate tools
 4. Can parts run independently? → Yes: Spawn subagents
 5. Need clarification? → Yes: Ask user (only for truly ambiguous requests)

@@ -1,4 +1,4 @@
-# Antigravity Proxy
+# Antigravity Proxy (Enhanced Fork)
 
 <p align="center">
   <img src="https://antigravity.google/assets/image/brand/antigravity-icon__full-color.png" alt="Antigravity" width="64" height="64">
@@ -7,6 +7,56 @@
 <h1 align="center">Antigravity Proxy</h1>
 
 <p align="center"><strong>Use any AI provider</strong> with <strong>Antigravity 2.0</strong> — NVIDIA, OpenRouter, OpenAI, Groq, Anthropic, Google Gemini, OpenCode Zen, OpenCode Go, or 9+ local inference solutions.</p>
+
+---
+
+## 💡 Acknowledgements & Upstream Fork (致谢与上游说明)
+
+本项目 Fork 自 [12errh/antigravity-proxy](https://github.com/12errh/antigravity-proxy)。非常感谢原作者 **@12errh** 打造了这一极具创意的 MITM TLS 代理框架，让 Antigravity Desktop 可以自由接入各大模型！
+
+---
+
+## 🛠️ 实地落地优化与关键修复 (What We Fixed for Real-world Use)
+
+原项目在理论架构上非常完整，但在多网卡/国内代理网络、第三方 API 中转站以及 Antigravity 实际客户端交互下，存在多项阻塞落地的问题。我们在本 Fork 中进行了针对性修复：
+
+1. **解决 Google 登录与初始化 502 证书循环问题 (Self-signed Certificate 502 Fix)**
+   - **问题**：Antigravity 启动时会请求 Google 鉴权接口（`cloudcode-pa.googleapis.com`）。开启系统代理（如 Clash）时，代理隧道会把 Google 域名循环解析回本地 `127.0.0.1` 导致自签名证书报错 `502: Proxy error: self-signed certificate`。
+   - **修复**：在代理转发层重构了 `getForwardAgent`，在 CONNECT 隧道中直连 Google 后端 IP 并注入真实 SNI，彻底打通系统代理环境下的 Google 原生鉴权。
+
+2. **解决 Antigravity 客户端“不存在 list_dir” 工具幻觉死循环 (Tool Hallucination Fix)**
+   - **问题**：原预设提示词（`agent-context.md`、`agent-context-lite.md`）强约束外部模型调用 `list_dir`，但 Antigravity 客户端实际并没有 `list_dir` 工具，只有 `run_command`。这导致外部模型陷入 `list_dir` 报错重试死循环。
+   - **修复**：修正系统预设规范，将目录发现动作明确引导为 `run_command (dir / ls / Get-ChildItem)`。
+
+3. **支持 Dashboard 直接修改 Base URL 与配置防止覆盖**
+   - **改进**：Web 控制台增加 `OpenAI Base URL` 等直接配置项；修复了后台读取与保存时对第三方自定义 Base URL 的解析与展示支持。
+
+4. **优雅停止时自动清理 hosts 映射**
+   - **改进**：`antigravity stop` 会同步自动清除 `hosts` 里的代理重定向条目，确保关闭代理后日常网络与原版客户端完全不受残留污染。
+
+---
+
+## ⚠️ 上游模型协议匹配指南 (Crucial: Model Family Protocol Matching)
+
+在使用第三方 API 中转站（如聚合站、OneAPI / NewAPI）时，请务必注意**请求格式与模型血统的匹配**：
+
+### 1. 使用 Gemini 系列模型时，强烈推荐使用 Google 原生格式！
+* **为什么？**
+  如果使用 OpenAI 格式（`/v1/chat/completions`）中转 Gemini 模型，Gemini 的思考链（Thought）、多轮 Tool Call（`functionCall` / `functionResponse`）在转译为 OpenAI 的 `tool_calls` 和 `role: "tool"` 时，极易因格式微小差异导致模型无法识别上一轮工具输出，从而陷入不断重复调用同一命令的“死循环”。
+* **如何配置**：
+  只要你的第三方中转支持 Gemini 原生接口，请在 `.env` 中使用 `google` 提供商：
+  ```ini
+  PROVIDER_PRIORITY=google
+  GOOGLE_API_KEY=你的第三方API密钥
+  GOOGLE_BASE_URL=https://你的第三方域名   # 代理会自动调用 /v1beta/models/...:streamGenerateContent
+  ```
+
+### 2. 其他模型（Claude、GPT 等）请优先选择对应厂商的协议格式
+* **Claude 系列**：如果中转支持 Anthropic 原生协议，优先选用 `anthropic` provider（`/v1/messages`）；
+* **GPT / 兼容模型**：使用 `openai` provider（`/v1/chat/completions`）。
+> **核心原则**：尽可能让上游接口与模型的原生协议保持一致，避免二次跨协议转译带来的工具调用与上下文丢失！
+
+---
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@12errh/antigravity-proxy">

@@ -137,7 +137,8 @@ function createConfig() {
       return this.legacyProvider;
     },
     get baseUrl(): string {
-      return this.legacyProvider === 'nvidia' ? this.nvidiaBaseUrl : this.openrouterBaseUrl;
+      const active = this.providers.find((p) => p.id === this.legacyProvider);
+      return active?.baseUrl || (this.legacyProvider === 'nvidia' ? this.nvidiaBaseUrl : this.openrouterBaseUrl);
     },
     get apiKey(): string {
       return this.legacyProvider === 'nvidia' ? this.nvidiaApiKey : this.openrouterApiKey;

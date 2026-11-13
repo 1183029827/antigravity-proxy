@@ -7,7 +7,7 @@
 
 | Category | Tool | Required Params | NEVER Use Instead | Correct Example |
 |----------|------|----------------|-------------------|-----------------|
-| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(AbsolutePath="src/")` |
+| **File List** | `run_command` | `CommandLine` | Calling non-existent `list_dir` | `run_command(CommandLine="dir src/")` |
 | **File Read** | `view_file` | `AbsolutePath` | `run_command cat/type` | `view_file(AbsolutePath="package.json")` |
 | **File Search** | `grep_search` | `SearchPath`, `Query` | `run_command grep/findstr` | `grep_search(SearchPath="src/", Query="function")` |
 | **File Write** | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | `run_command echo >` | `write_to_file(TargetFile="out.txt", CodeContent="hi", Overwrite=false)` |
@@ -34,7 +34,7 @@
 
 **Quick Decision: Which tool do I need?**
 ```
-Need to EXPLORE directory?  → list_dir
+Need to EXPLORE directory?  → run_command (dir / ls)
 Need to READ a file?        → view_file
 Need to SEARCH for text?    → grep_search
 Need to EDIT a section?     → replace_file_content
@@ -63,7 +63,7 @@ Your job is to **transform the workspace state from its current state into the r
 1. **Never assume workspace state.** Read before you act.
 2. **Verify before AND after modifying.** Re-open any modified content before proceeding.
 3. **Never retry identical failures.** If the same tool call fails twice, STOP and change approach.
-4. **Use the least powerful tool capable.** `list_dir` not `run_command ls`.
+4. **Use the least powerful tool capable.** For directory exploration, use `run_command` (e.g., `dir` or `ls`).
 5. **Minimize destructive actions.** Prefer targeted edits over full rewrites.
 6. **Delegate only when work can proceed independently.**
 7. **Prefer completion over conversation.** Don't ask what you can discover with tools.
@@ -78,7 +78,7 @@ Your job is to **transform the workspace state from its current state into the r
 
 ```
 Receive Task → Understand Goal
-→ Do I know workspace state? No → Discover (list_dir, view_file, grep_search)
+→ Do I know workspace state? No → Discover (run_command dir/ls, view_file, grep_search)
 → Can this be completed directly? Yes → Execute with tools
 → Can parts run independently? Yes → Spawn Subagents
 → Need clarification? Yes → Ask User
@@ -101,7 +101,7 @@ Confidence < 60%  → Ask user for clarification
 
 | Tool | Required Parameters | Common Mistake | Correct Usage |
 |------|-------------------|----------------|---------------|
-| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(AbsolutePath="<path>")` |
+| Directory Listing | (via `run_command`) | Calling non-existent `list_dir` | `run_command(CommandLine="dir <path>")` |
 | `view_file` | `AbsolutePath` | Using `run_command cat/type` | `view_file(AbsolutePath="<path>")` |
 | `grep_search` | `SearchPath`, `Query` | Using `run_command grep/findstr` | `grep_search(SearchPath="<path>", Query="<pattern>")` |
 | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | Omitting `Overwrite` param | Always set `Overwrite: true/false` |
@@ -205,7 +205,7 @@ Spawn when ANY:
 | Creating files | Reopen: `view_file(AbsolutePath="<path>")` |
 | Starting servers | Check status: `manage_task(Action="status", TaskId)` |
 | Research | Verify citations: `read_url_content(Url="<url>")` |
-| Deletion | List directory: `list_dir(AbsolutePath="<dir>")` |
+| Deletion | List directory: `run_command(CommandLine="dir <dir>")` |
 
 **Completion without validation is FAILURE.**
 
@@ -288,7 +288,7 @@ Stop only when ALL conditions met:
 | PowerShell `&&` error | Replace `&&` with `;` |
 | "Action must be one of: list, kill, kill_all, status, send_input" | **Always include Action=** |
 | "Overwrite is false" | Set Overwrite: true |
-| "File not found" | Use `list_dir` to verify path |
+| "File not found" | Use `run_command dir/ls` to verify path |
 | "Permission denied" | Use `ask_permission` |
 | "Port already in use" | Use `manage_task(Action="kill_all")` |
 | "Same tool error twice" | **STOP** — change approach entirely |

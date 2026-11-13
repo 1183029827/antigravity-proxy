@@ -64,40 +64,52 @@ export class GoogleAdapter implements ModelAdapter {
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          // Drain any remaining bytes from decoder and buffer at stream EOF
+          buffer += decoder.decode();
+          if (buffer.trim()) {
+            yield* this.parseSSEChunk(buffer);
+          }
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const data = trimmed.slice(6).trim();
-          if (!data || data === '[DONE]') continue;
-          let chunk: any;
-          try { chunk = JSON.parse(data); } catch { continue; }
-          const candidate = chunk.candidates?.[0];
-          if (!candidate) continue;
-          const parts = candidate.content?.parts || [];
-          for (const part of parts) {
-            if (part.thought) {
-              if (part.text) yield { type: 'thought', content: part.text };
-            } else if (part.text) {
-              yield { type: 'text', content: part.text };
-            }
-            if (part.functionCall) {
-              const args = typeof part.functionCall.args === 'string'
-                ? this.parseToolArgs(part.functionCall.args)
-                : (part.functionCall.args || {});
-              yield { type: 'tool-call', name: part.functionCall.name, args };
-            }
-          }
-          if (candidate.finishReason) {
-            yield { type: 'done', finishReason: candidate.finishReason };
-          }
+          yield* this.parseSSEChunk(line);
         }
       }
     } finally {
       reader.releaseLock();
+    }
+  }
+
+  private *parseSSEChunk(line: string): Generator<StreamChunk> {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return;
+    // Support both 'data: ' and 'data:' per SSE spec
+    const data = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    let chunk: any;
+    try { chunk = JSON.parse(data); } catch { return; }
+    const candidate = chunk.candidates?.[0];
+    if (!candidate) return;
+    const parts = candidate.content?.parts || [];
+    for (const part of parts) {
+      if (part.thought) {
+        if (part.text) yield { type: 'thought', content: part.text };
+      } else if (part.text) {
+        yield { type: 'text', content: part.text };
+      }
+      if (part.functionCall) {
+        const args = typeof part.functionCall.args === 'string'
+          ? this.parseToolArgs(part.functionCall.args)
+          : (part.functionCall.args || {});
+        yield { type: 'tool-call', name: part.functionCall.name, args };
+      }
+    }
+    if (candidate.finishReason) {
+      yield { type: 'done', finishReason: candidate.finishReason };
     }
   }
 
@@ -137,59 +149,103 @@ export class GoogleAdapter implements ModelAdapter {
   private convertMessages(messages: OpenAIMessage[]): any[] {
     const result: any[] = [];
     const callNameMap = new Map<string, string>();
+
+    // Pass 1: Pre-populate callNameMap across all messages in context
     for (const m of messages) {
-      if (m.role === 'system') continue;
-      if (m.role === 'tool') {
-        const name = callNameMap.get(m.tool_call_id || '') || 'unknown';
-        result.push({
-          role: 'user',
-          parts: [{ functionResponse: { name, response: { content: typeof m.content === 'string' ? m.content : '' } } }],
-        });
-        continue;
-      }
-      const parts: any[] = [];
-      if (typeof m.content === 'string' && m.content) parts.push({ text: m.content });
-      if (Array.isArray(m.content)) {
-        for (const p of m.content) {
-          if (p.type === 'image_url' && p.image_url?.url) {
-            const url = p.image_url.url;
-            const m2 = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (m2) {
-              parts.push({ inlineData: { mimeType: m2[1], data: m2[2] } });
-            } else {
-              parts.push({ fileData: { fileUri: url, mimeType: 'image/jpeg' } });
-            }
-          } else if (p.type === 'input_audio' && p.input_audio?.data) {
-            parts.push({
-              inlineData: {
-                mimeType: AUDIO_MIME_BY_FORMAT[p.input_audio.format] || 'audio/wav',
-                data: p.input_audio.data,
-              },
-            });
-          } else if (p.type === 'video_url' && p.video_url?.url) {
-            const url = p.video_url.url;
-            const m2 = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (m2) {
-              parts.push({ inlineData: { mimeType: m2[1], data: m2[2] } });
-            } else if (/^https?:/i.test(url)) {
-              parts.push({ fileData: { fileUri: url, mimeType: 'video/mp4' } });
-            }
-          } else if (p.type === 'text' && p.text) {
-            parts.push({ text: p.text });
-          } else if (typeof p === 'string') {
-            parts.push({ text: p });
-          }
-        }
-      }
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
-          parts.push({
-            functionCall: { name: tc.function.name, args: this.parseToolArgs(tc.function.arguments) },
-          });
           callNameMap.set(tc.id, tc.function.name);
         }
       }
-      result.push({ role: m.role === 'assistant' ? 'model' : 'user', parts });
+    }
+
+    for (const m of messages) {
+      if (m.role === 'system') continue;
+
+      let role: 'user' | 'model';
+      const parts: any[] = [];
+
+      if (m.role === 'tool') {
+        role = 'user';
+        // Tool Name Resolution: map -> id regex pattern fallback -> unknown
+        const toolId = m.tool_call_id || '';
+        const regexMatch = toolId.match(/^call_(.+)_\d+$/);
+        const name = (m as any).name || callNameMap.get(toolId) || (regexMatch ? regexMatch[1] : 'unknown');
+
+        // Parse response payload into canonical Struct object
+        let responseObj: Record<string, unknown>;
+        if (typeof m.content === 'object' && m.content !== null && !Array.isArray(m.content)) {
+          responseObj = m.content as Record<string, unknown>;
+        } else if (typeof m.content === 'string') {
+          const trimmed = m.content.trim();
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              responseObj = parsed;
+            } else {
+              responseObj = { output: parsed ?? m.content };
+            }
+          } catch {
+            responseObj = { output: m.content };
+          }
+        } else {
+          responseObj = { output: '' };
+        }
+
+        parts.push({ functionResponse: { name, response: responseObj } });
+      } else {
+        role = m.role === 'assistant' ? 'model' : 'user';
+        if (typeof m.content === 'string' && m.content) parts.push({ text: m.content });
+        if (Array.isArray(m.content)) {
+          for (const p of m.content) {
+            if (p.type === 'image_url' && p.image_url?.url) {
+              const url = p.image_url.url;
+              const m2 = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (m2) {
+                parts.push({ inlineData: { mimeType: m2[1], data: m2[2] } });
+              } else {
+                parts.push({ fileData: { fileUri: url, mimeType: 'image/jpeg' } });
+              }
+            } else if (p.type === 'input_audio' && p.input_audio?.data) {
+              parts.push({
+                inlineData: {
+                  mimeType: AUDIO_MIME_BY_FORMAT[p.input_audio.format] || 'audio/wav',
+                  data: p.input_audio.data,
+                },
+              });
+            } else if (p.type === 'video_url' && p.video_url?.url) {
+              const url = p.video_url.url;
+              const m2 = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (m2) {
+                parts.push({ inlineData: { mimeType: m2[1], data: m2[2] } });
+              } else if (/^https?:/i.test(url)) {
+                parts.push({ fileData: { fileUri: url, mimeType: 'video/mp4' } });
+              }
+            } else if (p.type === 'text' && p.text) {
+              parts.push({ text: p.text });
+            } else if (typeof p === 'string') {
+              parts.push({ text: p });
+            }
+          }
+        }
+        if (m.tool_calls) {
+          for (const tc of m.tool_calls) {
+            parts.push({
+              functionCall: { name: tc.function.name, args: this.parseToolArgs(tc.function.arguments) },
+            });
+          }
+        }
+      }
+
+      if (parts.length === 0) continue;
+
+      // Fix Role Alternation Violation: merge consecutive parts with identical role into one turn
+      const last = result[result.length - 1];
+      if (last && last.role === role) {
+        last.parts.push(...parts);
+      } else {
+        result.push({ role, parts });
+      }
     }
     return result;
   }

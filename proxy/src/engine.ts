@@ -119,22 +119,9 @@ export function reloadRouter(): void {
 /**
  * Normalize a tool call from an external LLM.
  * Uses the ToolNormalizer to fix names, params, types, and defaults.
- * Falls back to simple internal-param stripping if normalizer doesn't apply.
  */
-const ANTIGRAVITY_INTERNAL_ONLY = new Set([
-  'toolAction', 'toolSummary', 'ToolAction', 'ToolSummary',
-]);
-
 function normalizeToolArgs(args: Record<string, unknown>, toolName: string): Record<string, unknown> {
-  // First: strip Antigravity internal params (these are injected by the runtime)
-  const cleaned: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (!ANTIGRAVITY_INTERNAL_ONLY.has(key)) cleaned[key] = value;
-  }
-  if (Object.keys(cleaned).length === 0) return args;
-
-  // Second: run through the tool normalizer for schema-aware fixes
-  const result = normalizeToolCall(toolName, cleaned);
+  const result = normalizeToolCall(toolName, args);
   if (result.warnings) {
     logger.info(`[normalizer] ${result.warnings.join('; ')}`);
   }
@@ -144,7 +131,7 @@ function normalizeToolArgs(args: Record<string, unknown>, toolName: string): Rec
 export type StreamResponseChunk =
   | { type: 'text'; content: string; provider?: string; resolvedModel?: string; sessionId?: string }
   | { type: 'thought'; content: string; provider?: string; resolvedModel?: string; sessionId?: string }
-  | { type: 'tool-call'; name: string; args: Record<string, unknown>; provider?: string; resolvedModel?: string }
+  | { type: 'tool-call'; name: string; args: Record<string, unknown>; id?: string; provider?: string; resolvedModel?: string }
   | { type: 'attempt'; provider: string; resolvedModel: string; attempt: number; status: string; fallback?: boolean };
 
 export async function* streamResponse(
@@ -185,7 +172,14 @@ export async function* streamResponse(
         yield { type: 'thought', content: chunk.content || '', provider: prov, resolvedModel: rmodel, sessionId: sid };
       } else if (chunk.type === 'tool-call') {
         const toolName = chunk.name || 'unknown';
-        yield { type: 'tool-call', name: toolName, args: normalizeToolArgs(chunk.args || {}, toolName), provider: prov, resolvedModel: rmodel };
+        yield {
+          type: 'tool-call',
+          name: toolName,
+          args: normalizeToolArgs(chunk.args || {}, toolName),
+          id: (chunk as any).id,
+          provider: prov,
+          resolvedModel: rmodel,
+        };
       } else if (chunk.type === 'attempt') {
         // A4: surface router's attempt events to the dashboard so failover
         // telemetry is visible. The downstream consumer in index.ts already

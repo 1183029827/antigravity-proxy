@@ -121,7 +121,7 @@ function getForwardAgent(targetHostname: string): https.Agent | undefined {
   try {
     const parsed = new URL(proxyUrl);
     const agent = new https.Agent({ keepAlive: true });
-    agent.createConnection = function(options: any, callback: (err: Error | null, socket?: any) => void) {
+    (agent as any).createConnection = function(options: any, callback: (err: Error | null, socket?: any) => void) {
       const servername = options.servername || targetHostname;
       const port = options.port || 443;
       const isGoogleHost = targetHostname.includes('googleapis.com') || (options.servername && options.servername.includes('googleapis.com'));
@@ -597,7 +597,7 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
     const generator = streamResponse(mapped, model, abortController.signal);
     let fullText = '';
     let thoughtText = '';
-    const toolCalls: { name: string; args: Record<string, unknown> }[] = [];
+    const toolCalls: { name: string; args: Record<string, unknown>; id?: string }[] = [];
 
     let usedProvider = '';
     let usedModel = '';
@@ -660,7 +660,7 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
           }, traceId, metadata: {},
         })}\n\n`);
       } else if (ctype === 'tool-call') {
-        toolCalls.push({ name: (chunk as any).name, args: (chunk as any).args });
+        toolCalls.push({ name: (chunk as any).name, args: (chunk as any).args, id: (chunk as any).id });
       }
     }
 
@@ -681,7 +681,11 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
     // Send final event with finishReason and metadata (no text — already streamed incrementally)
     const finalParts: any[] = [];
     if (thoughtText) finalParts.push({ thought: true, text: thoughtText });
-    for (const tc of toolCalls) finalParts.push({ functionCall: { name: tc.name, args: tc.args } });
+    for (const tc of toolCalls) {
+      const fc: any = { name: tc.name, args: tc.args };
+      if (tc.id) fc.id = tc.id;
+      finalParts.push({ functionCall: fc });
+    }
     const candidate: any = {
       index: 0, content: { role: 'model', parts: finalParts },
       safetyRatings: SAFETY_RATINGS, groundingMetadata: GROUNDING_METADATA,

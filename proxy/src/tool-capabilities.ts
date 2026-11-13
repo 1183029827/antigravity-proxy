@@ -81,6 +81,13 @@ const WELL_KNOWN_TOOLS: ToolSchema[] = [
         description: 'Full command with proper quoting',
         aliases: ['command', 'cmd', 'command_line', 'commandline'],
       },
+      toolSummary: {
+        type: 'string',
+        required: true,
+        description: 'Brief 2-5 word noun phrase describing the command task',
+        default: 'Command execution',
+        aliases: ['summary', 'tool_summary', 'desc', 'description', 'taskSummary'],
+      },
       Cwd: {
         type: 'string',
         required: false,
@@ -93,6 +100,13 @@ const WELL_KNOWN_TOOLS: ToolSchema[] = [
         description: '0 = wait, small number = background task',
         default: 0,
         aliases: ['wait_ms', 'waitms', 'timeout', 'async_after'],
+      },
+      IsDaemon: {
+        type: 'boolean',
+        required: false,
+        description: 'Whether command is a daemon process',
+        default: false,
+        aliases: ['isDaemon', 'daemon', 'is_daemon'],
       },
     },
   },

@@ -122,6 +122,8 @@ test('T1: ToolCapabilityRegistry well-known tools have correct schemas', () => {
   assert.equal(runCmd.params.CommandLine.required, true);
   assert.equal(runCmd.params.CommandLine.type, 'string');
   assert.ok(runCmd.params.CommandLine.aliases!.includes('command'));
+  assert.equal(runCmd.params.toolSummary.required, true);
+  assert.equal(runCmd.params.toolSummary.default, 'Command execution');
   assert.equal(runCmd.params.Cwd.required, false);
   assert.equal(runCmd.params.WaitMsBeforeAsync.default, 0);
 
@@ -187,6 +189,26 @@ test('T2: normalizeToolCall strips unknown params', () => {
   assert.equal(result.args.nonexistent_param, undefined, 'should strip unknown param');
   assert.ok(result.fixed, 'should mark as fixed');
   assert.ok(result.warnings!.some(w => w.includes('nonexistent_param')), 'should warn about stripped param');
+});
+
+test('T2: normalizeToolCall preserves toolSummary for run_command', () => {
+  const result = normalizeToolCall('run_command', {
+    CommandLine: 'python test.py',
+    toolSummary: 'Run unit test',
+    WaitMsBeforeAsync: 5000,
+  });
+  assert.equal(result.args.toolSummary, 'Run unit test');
+  assert.equal(result.args.CommandLine, 'python test.py');
+  assert.equal(result.args.WaitMsBeforeAsync, 5000);
+});
+
+test('T2: normalizeToolCall fills missing toolSummary with auto-generated or default value', () => {
+  const result = normalizeToolCall('run_command', {
+    CommandLine: 'python -c "import docx"',
+  });
+  assert.ok(result.args.toolSummary, 'should auto-fill toolSummary');
+  assert.equal(result.args.toolSummary, 'Command execution');
+  assert.equal(result.args.WaitMsBeforeAsync, 0);
 });
 
 test('T2: normalizeToolCall handles manage_task with various alias combos', () => {

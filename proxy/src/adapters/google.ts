@@ -105,7 +105,7 @@ export class GoogleAdapter implements ModelAdapter {
         const args = typeof part.functionCall.args === 'string'
           ? this.parseToolArgs(part.functionCall.args)
           : (part.functionCall.args || {});
-        yield { type: 'tool-call', name: part.functionCall.name, args };
+        yield { type: 'tool-call', name: part.functionCall.name, args, id: part.functionCall.id };
       }
     }
     if (candidate.finishReason) {

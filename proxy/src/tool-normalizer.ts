@@ -228,19 +228,27 @@ export function normalizeToolCall(
   }
 
   // Step 3: Fill missing params with defaults (required AND optional with defaults)
-  // Skip Antigravity internal params (toolAction, toolSummary) — they are stripped
-  // by engine.ts before normalization and never sent by the model.
-  const INTERNAL_PARAMS = new Set(['toolAction', 'toolSummary', 'ToolAction', 'ToolSummary']);
   for (const [paramName, paramDef] of Object.entries(schema.params)) {
-    if (INTERNAL_PARAMS.has(paramName)) continue;
-    if (!seenParams.has(paramName) && paramDef.default !== undefined) {
-      normalizedArgs[paramName] = paramDef.default;
-      if (paramDef.required) {
-        warnings.push(`Missing required "${paramName}" → default: ${JSON.stringify(paramDef.default)}`);
+    if (!seenParams.has(paramName)) {
+      if (paramDef.default !== undefined) {
+        normalizedArgs[paramName] = paramDef.default;
+        if (paramDef.required) {
+          warnings.push(`Missing required "${paramName}" → default: ${JSON.stringify(paramDef.default)}`);
+        }
+        fixed = true;
+      } else if (paramName === 'toolSummary') {
+        const cmd = typeof normalizedArgs['CommandLine'] === 'string' ? (normalizedArgs['CommandLine'] as string) : '';
+        const summary = cmd ? (cmd.length > 30 ? cmd.slice(0, 27) + '...' : cmd) : 'Command execution';
+        normalizedArgs[paramName] = summary;
+        warnings.push(`Missing required "${paramName}" → auto-generated: ${JSON.stringify(summary)}`);
+        fixed = true;
+      } else if (paramName === 'WaitMsBeforeAsync') {
+        normalizedArgs[paramName] = 5000;
+        warnings.push(`Missing required "${paramName}" → default: 5000`);
+        fixed = true;
+      } else if (paramDef.required) {
+        warnings.push(`Missing required "${paramName}" — no default available`);
       }
-      fixed = true;
-    } else if (paramDef.required && !seenParams.has(paramName)) {
-      warnings.push(`Missing required "${paramName}" — no default available`);
     }
   }
 

@@ -4,6 +4,7 @@ export interface StreamChunk {
   type: 'text' | 'tool-call' | 'error' | 'done' | 'thought' | 'attempt' | 'session-id';
   content?: string;
   name?: string;
+  id?: string;
   args?: Record<string, unknown>;
   finishReason?: string;
   attempt?: number;

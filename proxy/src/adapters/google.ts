@@ -142,7 +142,7 @@ export class GoogleAdapter implements ModelAdapter {
       if (m.role === 'tool') {
         const name = callNameMap.get(m.tool_call_id || '') || 'unknown';
         result.push({
-          role: 'function',
+          role: 'user',
           parts: [{ functionResponse: { name, response: { content: typeof m.content === 'string' ? m.content : '' } } }],
         });
         continue;

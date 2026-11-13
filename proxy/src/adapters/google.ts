@@ -195,6 +195,10 @@ export class GoogleAdapter implements ModelAdapter {
         parts.push({ functionResponse: { name, response: responseObj } });
       } else {
         role = m.role === 'assistant' ? 'model' : 'user';
+        // Preserve thinking chain for Gemini models
+        if (role === 'model' && m.reasoning_content) {
+          parts.push({ thought: true, text: m.reasoning_content });
+        }
         if (typeof m.content === 'string' && m.content) parts.push({ text: m.content });
         if (Array.isArray(m.content)) {
           for (const p of m.content) {
